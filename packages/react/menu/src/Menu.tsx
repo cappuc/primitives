@@ -16,6 +16,7 @@ import { Slot } from '@radix-ui/react-slot';
 import { useCallbackRef } from '@radix-ui/react-use-callback-ref';
 import { useFocusGuards } from '@radix-ui/react-focus-guards';
 import { useControllableState } from '@radix-ui/react-use-controllable-state';
+import { useLayoutEffect } from '@radix-ui/react-use-layout-effect';
 import { useId } from '@radix-ui/react-id';
 import { useMenuTypeahead, useMenuTypeaheadItem } from './useMenuTypeahead';
 
@@ -675,7 +676,7 @@ const MenuSubMenu: React.FC<MenuSubMenuOwnProps> = (props) => {
   // we defer rendering of nested children until after the parent is ready
   // this is to ensure that measurements are applied correctly relative to the parent and
   // that dismissable layers are appended in the correct order when using controlled props
-  React.useLayoutEffect(() => {
+  useLayoutEffect(() => {
     setRenderChildren(true);
   }, []);
 
