@@ -725,7 +725,31 @@ const MenuSubMenuContent = React.forwardRef((props, forwardedRef) => {
   const { ...contentProps } = props;
   const context = useMenuContext(SUB_MENU_CONTENT_NAME);
   const subMenuContext = useSubMenuContext(SUB_MENU_CONTENT_NAME);
+  const subMenuContentRef = React.useRef<HTMLDivElement>(null);
   const trigger = subMenuContext.triggerRef.current;
+
+  const handleFocusFirstItem = React.useCallback(() => {
+    const content = subMenuContentRef.current;
+
+    if (content) {
+      const items = Array.from(content.querySelectorAll(ENABLED_ITEM_SELECTOR));
+      (items[0] as HTMLElement | undefined)?.focus();
+    }
+  }, []);
+
+  /**
+   * We need to programatically manage focus based on the open state
+   * This is due to animation cancellations in `Presence` (e.g. running animations that are interrupted prior to completion) not triggering a components lifecycle effects by design
+   * As a result,`FocusScope` won't focus via the `onOpenAutoFocus` handler if an animation cancellation event occurs
+   */
+  React.useEffect(() => {
+    if (context.open) {
+      subMenuContentRef.current?.focus();
+      if (subMenuContext.focusFirstItem) {
+        handleFocusFirstItem();
+      }
+    }
+  }, [context.open, handleFocusFirstItem, subMenuContext.focusFirstItem]);
 
   return (
     <MenuContent
@@ -733,12 +757,10 @@ const MenuSubMenuContent = React.forwardRef((props, forwardedRef) => {
       align="start"
       {...contentProps}
       portalled
-      ref={forwardedRef}
-      onOpenAutoFocus={composeEventHandlers(contentProps.onOpenAutoFocus, (event) => {
-        const content = event.target as HTMLElement;
-        if (content && subMenuContext.focusFirstItem) {
-          const items = Array.from(content.querySelectorAll(ENABLED_ITEM_SELECTOR));
-          (items[0] as HTMLElement | undefined)?.focus();
+      ref={composeRefs(forwardedRef, subMenuContentRef)}
+      onOpenAutoFocus={composeEventHandlers(contentProps.onOpenAutoFocus, () => {
+        if (subMenuContext.focusFirstItem) {
+          handleFocusFirstItem();
         }
       })}
       onKeyDown={composeEventHandlers(contentProps.onKeyDown, (event) => {
@@ -751,15 +773,15 @@ const MenuSubMenuContent = React.forwardRef((props, forwardedRef) => {
       })}
       onEscapeKeyDown={composeEventHandlers(contentProps.onEscapeKeyDown, () => trigger?.focus())}
       /**
-       * Prevent focusing previous element on close.
-       * We don't want the focus to flicker back and forth between the content and trigger when mouse scrubbing.
+       * Don't focus the previous element on close
+       * This prevents focus flicker between menu and trigger when mouse scrubbing.
        */
       onCloseAutoFocus={composeEventHandlers(contentProps.onCloseAutoFocus, (event) =>
         event.preventDefault()
       )}
       /**
        * Prevent needlessly dismissing the menu when clicking the trigger
-       * The menu should always stay open while the mouse is hovering
+       * Tthe menu should always remain open while the mouse is hovering
        */
       onPointerDownOutside={composeEventHandlers(contentProps.onPointerDownOutside, (event) => {
         if (trigger?.contains(event.target as HTMLElement)) {

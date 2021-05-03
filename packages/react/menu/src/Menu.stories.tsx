@@ -239,6 +239,29 @@ export const Animated = () => {
             </MenuItemIndicator>
           </MenuCheckboxItem>
         ))}
+        <MenuSeparator className={separatorClass} />
+        <SubMenu heading="Foods" className={animatedRootClass}>
+          {foodGroups
+            .filter((foodGroup) => foodGroup.label)
+            .map((foodGroup) => (
+              <SubMenu
+                heading={foodGroup.label}
+                key={foodGroup.label}
+                className={animatedRootClass}
+              >
+                {foodGroup.foods.map((food) => (
+                  <MenuItem
+                    className={itemClass}
+                    onSelect={() => console.log(food.value)}
+                    key={food.value}
+                  >
+                    {food.label}
+                  </MenuItem>
+                ))}
+              </SubMenu>
+            ))}
+        </SubMenu>
+        <MenuSeparator className={separatorClass} />
         <MenuRadioGroup value={file} onValueChange={setFile}>
           {files.map((file) => (
             <MenuRadioItem key={file} className={itemClass} value={file}>
@@ -287,14 +310,6 @@ export const Submenus = () => {
             Paste
           </MenuItem>
         </SubMenu>
-
-        <MenuItem className={itemClass} onSelect={() => window.alert('edit')}>
-          Edit
-        </MenuItem>
-
-        <MenuItem className={itemClass} onSelect={() => window.alert('update')}>
-          Update
-        </MenuItem>
       </SubMenu>
 
       <SubMenu heading="Checkboxs">
@@ -335,15 +350,17 @@ export const Submenus = () => {
 };
 
 const SubMenu: React.FC<
-  React.ComponentProps<typeof MenuSubMenu> & { heading?: string; disabled?: boolean }
+  React.ComponentProps<typeof MenuSubMenuContent> & { heading?: string; disabled?: boolean }
 > = (props) => {
   const { children, heading = 'Sub Menu', disabled, ...subMenuProps } = props;
   return (
-    <MenuSubMenu {...subMenuProps}>
+    <MenuSubMenu>
       <MenuSubMenuTrigger className={itemClass} disabled={disabled}>
         {heading} →
       </MenuSubMenuTrigger>
-      <MenuSubMenuContent className={contentClass}>{children}</MenuSubMenuContent>
+      <MenuSubMenuContent className={contentClass} {...subMenuProps}>
+        {children}
+      </MenuSubMenuContent>
     </MenuSubMenu>
   );
 };
@@ -446,21 +463,21 @@ const separatorClass = css({
 });
 
 const fadeIn = css.keyframes({
-  from: { opacity: 0 },
-  to: { opacity: 1 },
+  from: { opacity: 0, transform: 'scale(0.9)' },
+  to: { opacity: 1, transform: 'scale(1)' },
 });
 
 const fadeOut = css.keyframes({
-  from: { opacity: 1 },
-  to: { opacity: 0 },
+  from: { opacity: 1, transform: 'scale(1)' },
+  to: { opacity: 0, transform: 'scale(0.9)' },
 });
 
 const animatedRootClass = css(contentClass, {
   '&[data-state="open"]': {
-    animation: `${fadeIn} 300ms ease-out`,
+    animation: `${fadeIn} 0.2s ease-out`,
   },
   '&[data-state="closed"]': {
-    animation: `${fadeOut} 300ms ease-in`,
+    animation: `${fadeOut} 0.05s ease-in`,
   },
 });
 
