@@ -310,6 +310,14 @@ export const Submenus = () => {
             Paste
           </MenuItem>
         </SubMenu>
+
+        <MenuItem className={itemClass} onSelect={() => window.alert('edit')}>
+          Edit
+        </MenuItem>
+
+        <MenuItem className={itemClass} onSelect={() => window.alert('update')}>
+          Update
+        </MenuItem>
       </SubMenu>
 
       <SubMenu heading="Checkboxs">
@@ -474,10 +482,10 @@ const fadeOut = css.keyframes({
 
 const animatedRootClass = css(contentClass, {
   '&[data-state="open"]': {
-    animation: `${fadeIn} 0.2s ease-out`,
+    animation: `${fadeIn} 0.3s ease-out`,
   },
   '&[data-state="closed"]': {
-    animation: `${fadeOut} 0.05s ease-in`,
+    animation: `${fadeOut} 0.1s ease-in`,
   },
 });
 

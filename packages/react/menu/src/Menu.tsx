@@ -91,7 +91,7 @@ const [MenuContentProvider, useMenuContentContext] = createContext<MenuContentCo
 );
 
 type MenuContentOwnProps = Polymorphic.Merge<
-  Polymorphic.OwnProps<typeof MenuContentImpl>,
+  Omit<Polymorphic.OwnProps<typeof MenuContentImpl>, 'onEntryFocus'>,
   {
     /**
      * Used to force mounting when more control is needed. Useful when
@@ -115,6 +115,8 @@ const MenuContent = React.forwardRef((props, forwardedRef) => {
         <MenuContentImpl
           data-state={getOpenState(context.open)}
           {...contentProps}
+          // we override the default behaviour which automatically focuses the first item
+          onEntryFocus={(event) => event.preventDefault()}
           ref={forwardedRef}
         />
       </CollectionSlot>
@@ -176,6 +178,12 @@ type MenuContentImplOwnProps = Polymorphic.Merge<
     onInteractOutside?: DismissableLayerProps['onInteractOutside'];
 
     /**
+     * Event handler called when `MenuContent` first receives focus.
+     * Can be prevented.
+     */
+    onEntryFocus?: RovingFocusGroupProps['onEntryFocus'];
+
+    /**
      * Whether scrolling outside the `MenuContent` should be prevented
      * (default: `false`)
      */
@@ -218,6 +226,7 @@ const MenuContentImpl = React.forwardRef((props, forwardedRef) => {
     onPointerDownOutside,
     onFocusOutside,
     onInteractOutside,
+    onEntryFocus,
     disableOutsideScroll,
     portalled,
     ...contentProps
@@ -310,8 +319,7 @@ const MenuContentImpl = React.forwardRef((props, forwardedRef) => {
                     loop={loop}
                     currentTabStopId={currentItemId}
                     onCurrentTabStopIdChange={setCurrentItemId}
-                    // we override the default behaviour which automatically focuses the first item
-                    onEntryFocus={(event) => event.preventDefault()}
+                    onEntryFocus={onEntryFocus}
                   >
                     <PopperPrimitive.Content
                       role="menu"
@@ -674,10 +682,10 @@ const MenuSubMenu: React.FC<MenuSubMenuOwnProps> = (props) => {
   });
 
   /**
-   * We defer rendering of child elements until ready, this ensures the following:
+   * We defer rendering of child elements until ready, this ensures that when using controlled props:
    *
-   * - That measurements are applied correctly to children relative to parent
-   * - That dismissable layers are appended in the correct order when using controlled props
+   * - Initial measurements are applied correctly to children relative to parent
+   * - Dismissable layers are appended in the correct order
    */
   useLayoutEffect(() => {
     setRenderChildren(true);
@@ -722,73 +730,66 @@ type MenuSubMenuContentPrimitive = Polymorphic.ForwardRefComponent<
 >;
 
 const MenuSubMenuContent = React.forwardRef((props, forwardedRef) => {
-  const { ...contentProps } = props;
+  const { forceMount, ...contentProps } = props;
   const context = useMenuContext(SUB_MENU_CONTENT_NAME);
   const subMenuContext = useSubMenuContext(SUB_MENU_CONTENT_NAME);
   const subMenuContentRef = React.useRef<HTMLDivElement>(null);
   const trigger = subMenuContext.triggerRef.current;
 
-  const handleFocusFirstItem = React.useCallback(() => {
-    const content = subMenuContentRef.current;
-
-    if (content) {
-      const items = Array.from(content.querySelectorAll(ENABLED_ITEM_SELECTOR));
-      (items[0] as HTMLElement | undefined)?.focus();
-    }
-  }, []);
-
   /**
-   * We need to programatically manage focus based on the open state
-   * This is due to animation cancellations in `Presence` (e.g. running animations that are interrupted prior to completion) not triggering a components lifecycle effects by design
-   * As a result,`FocusScope` won't focus via the `onOpenAutoFocus` handler if an animation cancellation event occurs
+   * We need to programatically focus the menu based on open state
+   * This is due to animation cancellation in `Presence` not triggering a components lifecycle effects (by design)
+   * As a result, `FocusScope` won't re-focus the menu if a cancellation event occurs during an exit animation
    */
   React.useEffect(() => {
-    if (context.open) {
-      subMenuContentRef.current?.focus();
-      if (subMenuContext.focusFirstItem) {
-        handleFocusFirstItem();
-      }
-    }
-  }, [context.open, handleFocusFirstItem, subMenuContext.focusFirstItem]);
+    const content = subMenuContentRef.current;
+    if (content && context.open) content.focus();
+  }, [context.open]);
 
   return (
-    <MenuContent
-      side="right"
-      align="start"
-      {...contentProps}
-      portalled
-      ref={composeRefs(forwardedRef, subMenuContentRef)}
-      onOpenAutoFocus={composeEventHandlers(contentProps.onOpenAutoFocus, () => {
-        if (subMenuContext.focusFirstItem) {
-          handleFocusFirstItem();
-        }
-      })}
-      onKeyDown={composeEventHandlers(contentProps.onKeyDown, (event) => {
-        if (event.key === 'ArrowLeft') {
-          // Close a single level
-          event.stopPropagation();
-          context.onOpenChange(false);
-          trigger?.focus();
-        }
-      })}
-      onEscapeKeyDown={composeEventHandlers(contentProps.onEscapeKeyDown, () => trigger?.focus())}
-      /**
-       * Don't focus the previous element on close
-       * This prevents focus flicker between menu and trigger when mouse scrubbing.
-       */
-      onCloseAutoFocus={composeEventHandlers(contentProps.onCloseAutoFocus, (event) =>
-        event.preventDefault()
-      )}
-      /**
-       * Prevent needlessly dismissing the menu when clicking the trigger
-       * Tthe menu should always remain open while the mouse is hovering
-       */
-      onPointerDownOutside={composeEventHandlers(contentProps.onPointerDownOutside, (event) => {
-        if (trigger?.contains(event.target as HTMLElement)) {
-          event.preventDefault();
-        }
-      })}
-    />
+    <Presence present={forceMount || context.open}>
+      <CollectionSlot>
+        <MenuContentImpl
+          data-state={getOpenState(context.open)}
+          side="right"
+          align="start"
+          {...contentProps}
+          portalled
+          disableOutsidePointerEvents={false}
+          disableOutsideScroll={false}
+          ref={composeRefs(forwardedRef, subMenuContentRef)}
+          onKeyDown={composeEventHandlers(contentProps.onKeyDown, (event) => {
+            if (event.key === 'ArrowLeft') {
+              // Close a single level
+              event.stopPropagation();
+              context.onOpenChange(false);
+              trigger?.focus();
+            }
+          })}
+          onEscapeKeyDown={composeEventHandlers(contentProps.onEscapeKeyDown, () =>
+            trigger?.focus()
+          )}
+          onEntryFocus={(event) => {
+            if (!subMenuContext.focusFirstItem) {
+              event.preventDefault();
+            }
+          }}
+          /**
+           * Prevent default behaviour of focusing previous element on close
+           * This stops the focus jumping around when moving the mouse quickly between triggers
+           */
+          onCloseAutoFocus={composeEventHandlers(contentProps.onCloseAutoFocus, (event) =>
+            event.preventDefault()
+          )}
+          // Prevent needlessly dismissing the menu when clicking the trigger
+          onPointerDownOutside={composeEventHandlers(contentProps.onPointerDownOutside, (event) => {
+            if (trigger?.contains(event.target as HTMLElement)) {
+              event.preventDefault();
+            }
+          })}
+        />
+      </CollectionSlot>
+    </Presence>
   );
 }) as MenuSubMenuContentPrimitive;
 
