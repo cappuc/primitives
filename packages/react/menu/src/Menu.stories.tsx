@@ -11,7 +11,7 @@ import {
   MenuRadioItem,
   MenuItemIndicator,
   MenuSeparator,
-  MenuSubMenuTrigger,
+  MenuTrigger,
 } from './Menu';
 import { css } from '../../../../stitches.config';
 import { foodGroups } from '../../../../test-data/foods';
@@ -364,9 +364,9 @@ const SubMenu: React.FC<
   const { children, heading = 'Sub Menu', disabled, ...subMenuProps } = props;
   return (
     <MenuPrimitive>
-      <MenuSubMenuTrigger className={itemClass} disabled={disabled}>
+      <MenuTrigger className={itemClass} disabled={disabled}>
         {heading} →
-      </MenuSubMenuTrigger>
+      </MenuTrigger>
       <MenuContent className={contentClass} {...subMenuProps}>
         {children}
       </MenuContent>
@@ -434,7 +434,12 @@ const itemStyles: any = {
   height: 25,
   padding: '0 10px',
   color: '$black',
+  width: '100%',
   borderRadius: 3,
+  border: 0,
+  fontFamily: 'inherit',
+  backgroundColor: 'transparent',
+  boxSizing: 'border-box',
 };
 
 const labelClass = css({

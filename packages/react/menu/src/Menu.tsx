@@ -30,7 +30,7 @@ const FIRST_KEYS = ['ArrowDown', 'PageUp', 'Home'];
 const LAST_KEYS = ['ArrowUp', 'PageDown', 'End'];
 const ALL_KEYS = [...FIRST_KEYS, ...LAST_KEYS];
 
-const [LevelCountProvider, useLevelCount] = createLevelCount('MenuLevelCount');
+const [MenuLevelProvider, useMenuLevel] = createMenuLevelCount('MenuLevelCount');
 
 /* -------------------------------------------------------------------------------------------------
  * Menu
@@ -48,12 +48,12 @@ const [MenuProvider, useMenuContext] = createContext<MenuContextValue>(MENU_NAME
 type MenuOwnProps = React.ComponentProps<typeof MenuImpl>;
 
 const Menu: React.FC<MenuOwnProps> = (props) => {
-  const [, levelCount] = useLevelCount();
+  const { levelCount } = useMenuLevel();
 
   return (
-    <LevelCountProvider levelCount={levelCount + 1}>
+    <MenuLevelProvider levelCount={levelCount + 1}>
       {levelCount > 0 ? <MenuSubMenu {...props} /> : <MenuImpl {...props} />}
-    </LevelCountProvider>
+    </MenuLevelProvider>
   );
 };
 
@@ -94,7 +94,7 @@ Menu.displayName = MENU_NAME;
 const SUB_MENU_NAME = 'MenuSubMenu';
 
 type MenuSubMenuContextValue = {
-  triggerRef: React.RefObject<HTMLDivElement>;
+  triggerRef: React.RefObject<HTMLButtonElement>;
   contentId: string;
   focusFirstItem: boolean;
   onMouseOpen(): void;
@@ -111,7 +111,7 @@ type MenuSubMenuOwnProps = {
 
 const MenuSubMenu: React.FC<MenuSubMenuOwnProps> = (props) => {
   const { children, open: openProp, defaultOpen, onOpenChange } = props;
-  const triggerRef = React.useRef<HTMLDivElement>(null);
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
   const [focusFirstItem, setFocusFirstItem] = React.useState(false);
   const [renderChildren, setRenderChildren] = React.useState(false);
   const [open = false, setOpen] = useControllableState({
@@ -187,7 +187,7 @@ type MenuContentPrimitive = Polymorphic.ForwardRefComponent<
 >;
 
 const MenuContent = React.forwardRef((props, forwardedRef) => {
-  const [isSubMenu] = useLevelCount();
+  const { isSubMenu } = useMenuLevel();
 
   const { forceMount, ...contentProps } = props;
   const context = useMenuContext(CONTENT_NAME);
@@ -201,7 +201,7 @@ const MenuContent = React.forwardRef((props, forwardedRef) => {
           <MenuContentImpl
             data-state={getOpenState(context.open)}
             {...contentProps}
-            // we override the default behaviour which automatically focuses the first item
+            // we override the default behavior which automatically focuses the first item
             onEntryFocus={(event) => event.preventDefault()}
             ref={forwardedRef}
           />
@@ -531,7 +531,7 @@ const MenuSubMenuContent = React.forwardRef((props, forwardedRef) => {
             }
           }}
           /**
-           * Prevent default behaviour of focusing previous element on close
+           * Prevent default behavior of focusing previous element on close
            * This stops the focus jumping around when moving the mouse quickly between triggers
            */
           onCloseAutoFocus={composeEventHandlers(contentProps.onCloseAutoFocus, (event) =>
@@ -817,17 +817,68 @@ const MenuItemIndicator = React.forwardRef((props, forwardedRef) => {
 MenuItemIndicator.displayName = ITEM_INDICATOR_NAME;
 
 /* -------------------------------------------------------------------------------------------------
+ * MenuTrigger
+ * -----------------------------------------------------------------------------------------------*/
+
+const TRIGGER_NAME = 'MenuTrigger';
+const TRIGGER_DEFAULT_TAG = 'button';
+
+type MenuTriggerOwnProps = Polymorphic.Merge<
+  Polymorphic.OwnProps<typeof MenuTriggerImpl>,
+  Polymorphic.OwnProps<typeof MenuSubMenuTrigger>
+>;
+type MenuTriggerPrimitive = Polymorphic.ForwardRefComponent<
+  Polymorphic.IntrinsicElement<typeof MenuTriggerImpl>,
+  MenuTriggerOwnProps
+>;
+
+const MenuTrigger = React.forwardRef((props, forwardedRef) => {
+  const { isSubMenu } = useMenuLevel();
+
+  if (isSubMenu) {
+    return <MenuSubMenuTrigger {...props} ref={forwardedRef} />;
+  } else {
+    return <MenuTriggerImpl {...props} ref={forwardedRef} />;
+  }
+}) as MenuTriggerPrimitive;
+
+type MenuTriggerImplOwnProps = Polymorphic.OwnProps<typeof MenuAnchor>;
+type MenuTriggerImplPrimitive = Polymorphic.ForwardRefComponent<
+  typeof TRIGGER_DEFAULT_TAG,
+  MenuTriggerImplOwnProps
+>;
+
+const MenuTriggerImpl = React.forwardRef((props, forwardedRef) => {
+  const { as = TRIGGER_DEFAULT_TAG, ...triggerProps } = props;
+  const context = useMenuContext(SUB_MENU_TRIGGER_NAME);
+
+  return (
+    <MenuAnchor
+      type="button"
+      aria-haspopup="menu"
+      aria-expanded={context.open ? true : undefined}
+      data-state={getOpenState(context.open)}
+      {...triggerProps}
+      as={as}
+      ref={forwardedRef}
+    />
+  );
+}) as MenuTriggerImplPrimitive;
+
+MenuTrigger.displayName = TRIGGER_NAME;
+
+/* -------------------------------------------------------------------------------------------------
  * MenuSubMenuTrigger
  * -----------------------------------------------------------------------------------------------*/
 
 const SUB_MENU_TRIGGER_NAME = 'MenuSubMenuTrigger';
 
 type MenuSubMenuTriggerOwnProps = Polymorphic.Merge<
-  Polymorphic.OwnProps<typeof MenuItem>,
-  Polymorphic.OwnProps<typeof MenuAnchor>
+  Polymorphic.OwnProps<typeof MenuTriggerImpl>,
+  Omit<Polymorphic.OwnProps<typeof MenuItem>, 'onSelect'>
 >;
 type MenuSubMenuTriggerPrimitive = Polymorphic.ForwardRefComponent<
-  Polymorphic.IntrinsicElement<typeof MenuItem>,
+  Polymorphic.IntrinsicElement<typeof MenuTriggerImpl>,
   MenuSubMenuTriggerOwnProps
 >;
 
@@ -838,19 +889,19 @@ const MenuSubMenuTrigger = React.forwardRef((props, forwardedRef) => {
   const [mouseInteracting, setMouseInteracting] = React.useState(false);
 
   return (
-    <MenuAnchor as={Slot}>
-      <MenuItem
-        aria-haspopup="menu"
-        aria-expanded={context.open ? true : undefined}
+    <MenuItem
+      as={Slot}
+      disabled={disabled}
+      // Omit custom onSelect behavior which closes the menu by default
+      onSelect={React.useCallback((event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }, [])}
+    >
+      <MenuTriggerImpl
         aria-controls={context.open ? subMenuContext.contentId : undefined}
-        data-state={getOpenState(context.open)}
-        disabled={disabled}
         {...triggerProps}
         ref={composeRefs(forwardedRef, subMenuContext.triggerRef)}
-        onSelect={composeEventHandlers(triggerProps.onSelect, (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        })}
         onMouseMove={composeEventHandlers(triggerProps.onMouseMove, (event) => {
           // Prevent refocusing trigger which causes premature menu close
           event.preventDefault();
@@ -878,7 +929,7 @@ const MenuSubMenuTrigger = React.forwardRef((props, forwardedRef) => {
           if (['Enter', ' ', 'ArrowRight'].includes(event.key)) subMenuContext.onKeyboardOpen();
         })}
       />
-    </MenuAnchor>
+    </MenuItem>
   );
 }) as MenuSubMenuTriggerPrimitive;
 
@@ -922,25 +973,25 @@ function focusFirst(candidates: HTMLElement[]) {
   }
 }
 
-function createLevelCount(displayName?: string) {
+function createMenuLevelCount(displayName?: string) {
   const LevelCountContext = React.createContext(0);
 
-  const LevelCountProvider: React.FC<{ levelCount: number }> = (props) => {
+  const MenuLevelProvider: React.FC<{ levelCount: number }> = (props) => {
     const { children, levelCount } = props;
     return <LevelCountContext.Provider value={levelCount}>{children}</LevelCountContext.Provider>;
   };
 
   if (displayName) {
-    LevelCountProvider.displayName = displayName;
+    MenuLevelProvider.displayName = displayName;
   }
 
-  function useLevelCount(): [boolean, number] {
+  function useMenuLevel() {
     const levelCount = React.useContext(LevelCountContext) || 0;
     const isSubMenu = levelCount > 1;
-    return [isSubMenu, levelCount];
+    return { isSubMenu, levelCount };
   }
 
-  return [LevelCountProvider, useLevelCount] as const;
+  return [MenuLevelProvider, useMenuLevel] as const;
 }
 
 const Root = Menu;
@@ -955,7 +1006,7 @@ const RadioItem = MenuRadioItem;
 const ItemIndicator = MenuItemIndicator;
 const Separator = MenuSeparator;
 const Arrow = MenuArrow;
-const SubMenuTrigger = MenuSubMenuTrigger;
+const Trigger = MenuTrigger;
 
 export {
   Menu,
@@ -970,7 +1021,7 @@ export {
   MenuItemIndicator,
   MenuSeparator,
   MenuArrow,
-  MenuSubMenuTrigger,
+  MenuTrigger,
   //
   Root,
   Anchor,
@@ -984,5 +1035,5 @@ export {
   ItemIndicator,
   Separator,
   Arrow,
-  SubMenuTrigger,
+  Trigger,
 };
