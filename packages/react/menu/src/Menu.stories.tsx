@@ -11,8 +11,6 @@ import {
   MenuRadioItem,
   MenuItemIndicator,
   MenuSeparator,
-  MenuSubMenu,
-  MenuSubMenuContent,
   MenuSubMenuTrigger,
 } from './Menu';
 import { css } from '../../../../stitches.config';
@@ -358,18 +356,21 @@ export const Submenus = () => {
 };
 
 const SubMenu: React.FC<
-  React.ComponentProps<typeof MenuSubMenuContent> & { heading?: string; disabled?: boolean }
+  React.ComponentProps<typeof MenuContent> & {
+    heading?: string;
+    disabled?: boolean;
+  }
 > = (props) => {
   const { children, heading = 'Sub Menu', disabled, ...subMenuProps } = props;
   return (
-    <MenuSubMenu>
+    <MenuPrimitive>
       <MenuSubMenuTrigger className={itemClass} disabled={disabled}>
         {heading} →
       </MenuSubMenuTrigger>
-      <MenuSubMenuContent className={contentClass} {...subMenuProps}>
+      <MenuContent className={contentClass} {...subMenuProps}>
         {children}
-      </MenuSubMenuContent>
-    </MenuSubMenu>
+      </MenuContent>
+    </MenuPrimitive>
   );
 };
 

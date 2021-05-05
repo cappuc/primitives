@@ -30,6 +30,8 @@ const FIRST_KEYS = ['ArrowDown', 'PageUp', 'Home'];
 const LAST_KEYS = ['ArrowUp', 'PageDown', 'End'];
 const ALL_KEYS = [...FIRST_KEYS, ...LAST_KEYS];
 
+const [LevelCountProvider, useLevelCount] = createLevelCount('MenuLevelCount');
+
 /* -------------------------------------------------------------------------------------------------
  * Menu
  * -----------------------------------------------------------------------------------------------*/
@@ -43,12 +45,24 @@ type MenuContextValue = {
 
 const [MenuProvider, useMenuContext] = createContext<MenuContextValue>(MENU_NAME);
 
-type MenuOwnProps = {
+type MenuOwnProps = React.ComponentProps<typeof MenuImpl>;
+
+const Menu: React.FC<MenuOwnProps> = (props) => {
+  const [, levelCount] = useLevelCount();
+
+  return (
+    <LevelCountProvider levelCount={levelCount + 1}>
+      {levelCount > 0 ? <MenuSubMenu {...props} /> : <MenuImpl {...props} />}
+    </LevelCountProvider>
+  );
+};
+
+type MenuImplProps = {
   open?: boolean;
   onOpenChange?(open: boolean): void;
 };
 
-const Menu: React.FC<MenuOwnProps> = (props) => {
+const MenuImpl: React.FC<MenuImplProps> = (props) => {
   const { open = false, children, onOpenChange } = props;
   const handleOpenChange = useCallbackRef(onOpenChange);
 
@@ -72,6 +86,72 @@ const Menu: React.FC<MenuOwnProps> = (props) => {
 };
 
 Menu.displayName = MENU_NAME;
+
+/* -------------------------------------------------------------------------------------------------
+ * MenuSubMenu
+ * -----------------------------------------------------------------------------------------------*/
+
+const SUB_MENU_NAME = 'MenuSubMenu';
+
+type MenuSubMenuContextValue = {
+  triggerRef: React.RefObject<HTMLDivElement>;
+  contentId: string;
+  focusFirstItem: boolean;
+  onMouseOpen(): void;
+  onKeyboardOpen(): void;
+};
+
+const [SubMenuProvider, useSubMenuContext] = createContext<MenuSubMenuContextValue>(SUB_MENU_NAME);
+
+type MenuSubMenuOwnProps = {
+  open?: boolean;
+  onOpenChange?(open: boolean): void;
+  defaultOpen?: boolean;
+};
+
+const MenuSubMenu: React.FC<MenuSubMenuOwnProps> = (props) => {
+  const { children, open: openProp, defaultOpen, onOpenChange } = props;
+  const triggerRef = React.useRef<HTMLDivElement>(null);
+  const [focusFirstItem, setFocusFirstItem] = React.useState(false);
+  const [renderChildren, setRenderChildren] = React.useState(false);
+  const [open = false, setOpen] = useControllableState({
+    prop: openProp,
+    defaultProp: defaultOpen,
+    onChange: onOpenChange,
+  });
+
+  /**
+   * We defer rendering of child elements until ready, this ensures that when using controlled props:
+   *
+   * - Initial measurements are applied correctly to children relative to parent
+   * - Dismissable layers are appended in the correct order
+   */
+  useLayoutEffect(() => {
+    setRenderChildren(true);
+  }, []);
+
+  return (
+    <SubMenuProvider
+      contentId={useId()}
+      triggerRef={triggerRef}
+      focusFirstItem={focusFirstItem}
+      onMouseOpen={React.useCallback(() => {
+        setOpen(true);
+        setFocusFirstItem(false);
+      }, [setOpen])}
+      onKeyboardOpen={React.useCallback(() => {
+        setOpen(true);
+        setFocusFirstItem(true);
+      }, [setOpen])}
+    >
+      <MenuImpl open={open} onOpenChange={setOpen}>
+        {renderChildren && children}
+      </MenuImpl>
+    </SubMenuProvider>
+  );
+};
+
+MenuSubMenu.displayName = SUB_MENU_NAME;
 
 /* -------------------------------------------------------------------------------------------------
  * MenuContent
@@ -107,21 +187,28 @@ type MenuContentPrimitive = Polymorphic.ForwardRefComponent<
 >;
 
 const MenuContent = React.forwardRef((props, forwardedRef) => {
+  const [isSubMenu] = useLevelCount();
+
   const { forceMount, ...contentProps } = props;
   const context = useMenuContext(CONTENT_NAME);
-  return (
-    <Presence present={forceMount || context.open}>
-      <CollectionSlot>
-        <MenuContentImpl
-          data-state={getOpenState(context.open)}
-          {...contentProps}
-          // we override the default behaviour which automatically focuses the first item
-          onEntryFocus={(event) => event.preventDefault()}
-          ref={forwardedRef}
-        />
-      </CollectionSlot>
-    </Presence>
-  );
+
+  if (isSubMenu) {
+    return <MenuSubMenuContent {...props} />;
+  } else {
+    return (
+      <Presence present={forceMount || context.open}>
+        <CollectionSlot>
+          <MenuContentImpl
+            data-state={getOpenState(context.open)}
+            {...contentProps}
+            // we override the default behaviour which automatically focuses the first item
+            onEntryFocus={(event) => event.preventDefault()}
+            ref={forwardedRef}
+          />
+        </CollectionSlot>
+      </Presence>
+    );
+  }
 }) as MenuContentPrimitive;
 
 type MenuContentImplOwnProps = Polymorphic.Merge<
@@ -382,6 +469,87 @@ const MenuContentImpl = React.forwardRef((props, forwardedRef) => {
 }) as MenuContentImplPrimitive;
 
 MenuContent.displayName = CONTENT_NAME;
+
+/* -------------------------------------------------------------------------------------------------
+ * MenuSubMenuContent
+ * -----------------------------------------------------------------------------------------------*/
+
+const SUB_MENU_CONTENT_NAME = 'MenuSubMenuContent';
+
+type MenuSubMenuContentOwnProps = Omit<
+  Polymorphic.OwnProps<typeof MenuContent>,
+  'portalled' | 'disableOutsidePointerEvents' | 'disableOutsideScroll'
+>;
+type MenuSubMenuContentPrimitive = Polymorphic.ForwardRefComponent<
+  Polymorphic.IntrinsicElement<typeof MenuContent>,
+  MenuSubMenuContentOwnProps
+>;
+
+const MenuSubMenuContent = React.forwardRef((props, forwardedRef) => {
+  const { forceMount, ...contentProps } = props;
+  const context = useMenuContext(SUB_MENU_CONTENT_NAME);
+  const subMenuContext = useSubMenuContext(SUB_MENU_CONTENT_NAME);
+  const subMenuContentRef = React.useRef<HTMLDivElement>(null);
+  const trigger = subMenuContext.triggerRef.current;
+
+  /**
+   * We need to programatically focus the menu based on open state
+   * This is due to animation cancellation in `Presence` not triggering a components lifecycle effects (by design)
+   * As a result, `FocusScope` won't re-focus the menu if a cancellation event occurs during an exit animation
+   */
+  React.useEffect(() => {
+    const content = subMenuContentRef.current;
+    if (content && context.open) content.focus();
+  }, [context.open]);
+
+  return (
+    <Presence present={forceMount || context.open}>
+      <CollectionSlot>
+        <MenuContentImpl
+          data-state={getOpenState(context.open)}
+          side="right"
+          align="start"
+          {...contentProps}
+          portalled
+          disableOutsidePointerEvents={false}
+          disableOutsideScroll={false}
+          ref={composeRefs(forwardedRef, subMenuContentRef)}
+          onKeyDown={composeEventHandlers(contentProps.onKeyDown, (event) => {
+            if (event.key === 'ArrowLeft') {
+              // Close a single level
+              event.stopPropagation();
+              context.onOpenChange(false);
+              trigger?.focus();
+            }
+          })}
+          onEscapeKeyDown={composeEventHandlers(contentProps.onEscapeKeyDown, () =>
+            trigger?.focus()
+          )}
+          onEntryFocus={(event) => {
+            if (!subMenuContext.focusFirstItem) {
+              event.preventDefault();
+            }
+          }}
+          /**
+           * Prevent default behaviour of focusing previous element on close
+           * This stops the focus jumping around when moving the mouse quickly between triggers
+           */
+          onCloseAutoFocus={composeEventHandlers(contentProps.onCloseAutoFocus, (event) =>
+            event.preventDefault()
+          )}
+          // Prevent needlessly dismissing the menu when clicking the trigger
+          onPointerDownOutside={composeEventHandlers(contentProps.onPointerDownOutside, (event) => {
+            if (trigger?.contains(event.target as HTMLElement)) {
+              event.preventDefault();
+            }
+          })}
+        />
+      </CollectionSlot>
+    </Presence>
+  );
+}) as MenuSubMenuContentPrimitive;
+
+MenuSubMenuContent.displayName = SUB_MENU_CONTENT_NAME;
 
 /* -------------------------------------------------------------------------------------------------
  * MenuItem
@@ -649,153 +817,6 @@ const MenuItemIndicator = React.forwardRef((props, forwardedRef) => {
 MenuItemIndicator.displayName = ITEM_INDICATOR_NAME;
 
 /* -------------------------------------------------------------------------------------------------
- * MenuSubMenu
- * -----------------------------------------------------------------------------------------------*/
-
-const SUB_MENU_NAME = 'MenuSubMenu';
-
-type MenuSubMenuContextValue = {
-  triggerRef: React.RefObject<HTMLDivElement>;
-  contentId: string;
-  focusFirstItem: boolean;
-  onMouseOpen(): void;
-  onKeyboardOpen(): void;
-};
-
-const [SubMenuProvider, useSubMenuContext] = createContext<MenuSubMenuContextValue>(SUB_MENU_NAME);
-
-type MenuSubMenuOwnProps = {
-  open?: boolean;
-  onOpenChange?(open: boolean): void;
-  defaultOpen?: boolean;
-};
-
-const MenuSubMenu: React.FC<MenuSubMenuOwnProps> = (props) => {
-  const { children, open: openProp, defaultOpen, onOpenChange } = props;
-  const triggerRef = React.useRef<HTMLDivElement>(null);
-  const [focusFirstItem, setFocusFirstItem] = React.useState(false);
-  const [renderChildren, setRenderChildren] = React.useState(false);
-  const [open = false, setOpen] = useControllableState({
-    prop: openProp,
-    defaultProp: defaultOpen,
-    onChange: onOpenChange,
-  });
-
-  /**
-   * We defer rendering of child elements until ready, this ensures that when using controlled props:
-   *
-   * - Initial measurements are applied correctly to children relative to parent
-   * - Dismissable layers are appended in the correct order
-   */
-  useLayoutEffect(() => {
-    setRenderChildren(true);
-  }, []);
-
-  return (
-    <SubMenuProvider
-      contentId={useId()}
-      triggerRef={triggerRef}
-      focusFirstItem={focusFirstItem}
-      onMouseOpen={React.useCallback(() => {
-        setOpen(true);
-        setFocusFirstItem(false);
-      }, [setOpen])}
-      onKeyboardOpen={React.useCallback(() => {
-        setOpen(true);
-        setFocusFirstItem(true);
-      }, [setOpen])}
-    >
-      <Menu open={open} onOpenChange={setOpen}>
-        {renderChildren && children}
-      </Menu>
-    </SubMenuProvider>
-  );
-};
-
-MenuSubMenu.displayName = SUB_MENU_NAME;
-
-/* -------------------------------------------------------------------------------------------------
- * MenuSubMenuContent
- * -----------------------------------------------------------------------------------------------*/
-
-const SUB_MENU_CONTENT_NAME = 'MenuSubMenuContent';
-
-type MenuSubMenuContentOwnProps = Omit<
-  Polymorphic.OwnProps<typeof MenuContent>,
-  'portalled' | 'disableOutsidePointerEvents' | 'disableOutsideScroll'
->;
-type MenuSubMenuContentPrimitive = Polymorphic.ForwardRefComponent<
-  Polymorphic.IntrinsicElement<typeof MenuContent>,
-  MenuSubMenuContentOwnProps
->;
-
-const MenuSubMenuContent = React.forwardRef((props, forwardedRef) => {
-  const { forceMount, ...contentProps } = props;
-  const context = useMenuContext(SUB_MENU_CONTENT_NAME);
-  const subMenuContext = useSubMenuContext(SUB_MENU_CONTENT_NAME);
-  const subMenuContentRef = React.useRef<HTMLDivElement>(null);
-  const trigger = subMenuContext.triggerRef.current;
-
-  /**
-   * We need to programatically focus the menu based on open state
-   * This is due to animation cancellation in `Presence` not triggering a components lifecycle effects (by design)
-   * As a result, `FocusScope` won't re-focus the menu if a cancellation event occurs during an exit animation
-   */
-  React.useEffect(() => {
-    const content = subMenuContentRef.current;
-    if (content && context.open) content.focus();
-  }, [context.open]);
-
-  return (
-    <Presence present={forceMount || context.open}>
-      <CollectionSlot>
-        <MenuContentImpl
-          data-state={getOpenState(context.open)}
-          side="right"
-          align="start"
-          {...contentProps}
-          portalled
-          disableOutsidePointerEvents={false}
-          disableOutsideScroll={false}
-          ref={composeRefs(forwardedRef, subMenuContentRef)}
-          onKeyDown={composeEventHandlers(contentProps.onKeyDown, (event) => {
-            if (event.key === 'ArrowLeft') {
-              // Close a single level
-              event.stopPropagation();
-              context.onOpenChange(false);
-              trigger?.focus();
-            }
-          })}
-          onEscapeKeyDown={composeEventHandlers(contentProps.onEscapeKeyDown, () =>
-            trigger?.focus()
-          )}
-          onEntryFocus={(event) => {
-            if (!subMenuContext.focusFirstItem) {
-              event.preventDefault();
-            }
-          }}
-          /**
-           * Prevent default behaviour of focusing previous element on close
-           * This stops the focus jumping around when moving the mouse quickly between triggers
-           */
-          onCloseAutoFocus={composeEventHandlers(contentProps.onCloseAutoFocus, (event) =>
-            event.preventDefault()
-          )}
-          // Prevent needlessly dismissing the menu when clicking the trigger
-          onPointerDownOutside={composeEventHandlers(contentProps.onPointerDownOutside, (event) => {
-            if (trigger?.contains(event.target as HTMLElement)) {
-              event.preventDefault();
-            }
-          })}
-        />
-      </CollectionSlot>
-    </Presence>
-  );
-}) as MenuSubMenuContentPrimitive;
-
-MenuSubMenuContent.displayName = SUB_MENU_CONTENT_NAME;
-
-/* -------------------------------------------------------------------------------------------------
  * MenuSubMenuTrigger
  * -----------------------------------------------------------------------------------------------*/
 
@@ -865,7 +886,9 @@ MenuSubMenuTrigger.displayName = SUB_MENU_TRIGGER_NAME;
 
 /* ---------------------------------------------------------------------------------------------- */
 
-const MenuAnchor = extendPrimitive(PopperPrimitive.Anchor, { displayName: 'MenuAnchor' });
+const MenuAnchor = extendPrimitive(PopperPrimitive.Anchor, {
+  displayName: 'MenuAnchor',
+});
 const MenuGroup = extendPrimitive(Primitive, {
   defaultProps: { role: 'group' },
   displayName: 'MenuGroup',
@@ -875,7 +898,9 @@ const MenuSeparator = extendPrimitive(Primitive, {
   defaultProps: { role: 'separator', 'aria-orientation': 'horizontal' },
   displayName: 'MenuSeparator',
 });
-const MenuArrow = extendPrimitive(PopperPrimitive.Arrow, { displayName: 'MenuArrow' });
+const MenuArrow = extendPrimitive(PopperPrimitive.Arrow, {
+  displayName: 'MenuArrow',
+});
 
 /* -----------------------------------------------------------------------------------------------*/
 
@@ -897,6 +922,27 @@ function focusFirst(candidates: HTMLElement[]) {
   }
 }
 
+function createLevelCount(displayName?: string) {
+  const LevelCountContext = React.createContext(0);
+
+  const LevelCountProvider: React.FC<{ levelCount: number }> = (props) => {
+    const { children, levelCount } = props;
+    return <LevelCountContext.Provider value={levelCount}>{children}</LevelCountContext.Provider>;
+  };
+
+  if (displayName) {
+    LevelCountProvider.displayName = displayName;
+  }
+
+  function useLevelCount(): [boolean, number] {
+    const levelCount = React.useContext(LevelCountContext) || 0;
+    const isSubMenu = levelCount > 1;
+    return [isSubMenu, levelCount];
+  }
+
+  return [LevelCountProvider, useLevelCount] as const;
+}
+
 const Root = Menu;
 const Anchor = MenuAnchor;
 const Content = MenuContent;
@@ -909,9 +955,7 @@ const RadioItem = MenuRadioItem;
 const ItemIndicator = MenuItemIndicator;
 const Separator = MenuSeparator;
 const Arrow = MenuArrow;
-const SubMenu = MenuSubMenu;
 const SubMenuTrigger = MenuSubMenuTrigger;
-const SubMenuContent = MenuSubMenuContent;
 
 export {
   Menu,
@@ -926,9 +970,7 @@ export {
   MenuItemIndicator,
   MenuSeparator,
   MenuArrow,
-  MenuSubMenu,
   MenuSubMenuTrigger,
-  MenuSubMenuContent,
   //
   Root,
   Anchor,
@@ -942,7 +984,5 @@ export {
   ItemIndicator,
   Separator,
   Arrow,
-  SubMenu,
   SubMenuTrigger,
-  SubMenuContent,
 };
