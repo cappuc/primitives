@@ -52,7 +52,7 @@ const Menu: React.FC<MenuOwnProps> = (props) => {
 
   return (
     <MenuLevelProvider levelCount={levelCount + 1}>
-      {levelCount > 0 ? <MenuSubMenu {...props} /> : <MenuImpl {...props} />}
+      {levelCount > 0 ? <MenuNested {...props} /> : <MenuImpl {...props} />}
     </MenuLevelProvider>
   );
 };
@@ -88,12 +88,12 @@ const MenuImpl: React.FC<MenuImplProps> = (props) => {
 Menu.displayName = MENU_NAME;
 
 /* -------------------------------------------------------------------------------------------------
- * MenuSubMenu
+ * MenuNested
  * -----------------------------------------------------------------------------------------------*/
 
-const SUB_MENU_NAME = 'MenuSubMenu';
+const SUB_MENU_NAME = 'MenuNested';
 
-type MenuSubMenuContextValue = {
+type MenuNestedContextValue = {
   triggerRef: React.RefObject<HTMLButtonElement>;
   contentId: string;
   focusFirstItem: boolean;
@@ -101,15 +101,17 @@ type MenuSubMenuContextValue = {
   onKeyboardOpen(): void;
 };
 
-const [SubMenuProvider, useSubMenuContext] = createContext<MenuSubMenuContextValue>(SUB_MENU_NAME);
+const [NestedMenuProvider, useNestedMenuContext] = createContext<MenuNestedContextValue>(
+  SUB_MENU_NAME
+);
 
-type MenuSubMenuOwnProps = {
+type MenuNestedOwnProps = {
   open?: boolean;
   onOpenChange?(open: boolean): void;
   defaultOpen?: boolean;
 };
 
-const MenuSubMenu: React.FC<MenuSubMenuOwnProps> = (props) => {
+const MenuNested: React.FC<MenuNestedOwnProps> = (props) => {
   const { children, open: openProp, defaultOpen, onOpenChange } = props;
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const [focusFirstItem, setFocusFirstItem] = React.useState(false);
@@ -131,7 +133,7 @@ const MenuSubMenu: React.FC<MenuSubMenuOwnProps> = (props) => {
   }, []);
 
   return (
-    <SubMenuProvider
+    <NestedMenuProvider
       contentId={useId()}
       triggerRef={triggerRef}
       focusFirstItem={focusFirstItem}
@@ -147,11 +149,11 @@ const MenuSubMenu: React.FC<MenuSubMenuOwnProps> = (props) => {
       <MenuImpl open={open} onOpenChange={setOpen}>
         {renderChildren && children}
       </MenuImpl>
-    </SubMenuProvider>
+    </NestedMenuProvider>
   );
 };
 
-MenuSubMenu.displayName = SUB_MENU_NAME;
+MenuNested.displayName = SUB_MENU_NAME;
 
 /* -------------------------------------------------------------------------------------------------
  * MenuContent
@@ -192,7 +194,7 @@ const MenuContent = React.forwardRef((props, forwardedRef) => {
   const context = useMenuContext(CONTENT_NAME);
 
   if (isSubMenu) {
-    return <MenuSubMenuContent {...props} />;
+    return <MenuNestedContent {...props} />;
   } else {
     return (
       <Presence present={forceMount || context.open}>
@@ -235,6 +237,7 @@ type MenuContentImplOwnProps = Polymorphic.Merge<
      * When `true`, hover/focus/click interactions will be disabled on elements outside the `MenuContent`.
      * Users will need to click twice on outside elements to interact with them:
      * Once to close the `MenuContent`, and again to trigger the element.
+     * Always `false` inside a nested menu.
      */
     disableOutsidePointerEvents?: DismissableLayerProps['disableOutsidePointerEvents'];
 
@@ -270,7 +273,8 @@ type MenuContentImplOwnProps = Polymorphic.Merge<
     onEntryFocus?: RovingFocusGroupProps['onEntryFocus'];
 
     /**
-     * Whether scrolling outside the `MenuContent` should be prevented
+     * Whether scrolling outside the `MenuContent` should be prevented.
+     * Always `false` inside a nested menu.
      * (default: `false`)
      */
     disableOutsideScroll?: boolean;
@@ -288,7 +292,8 @@ type MenuContentImplOwnProps = Polymorphic.Merge<
     loop?: RovingFocusGroupProps['loop'];
 
     /**
-     * Whether the `MenuContent` should render in a `Portal`
+     * Whether the `MenuContent` should render in a `Portal`.
+     * Always `true` inside a nested menu.
      * (default: `true`)
      */
     portalled?: boolean;
@@ -470,12 +475,12 @@ const MenuContentImpl = React.forwardRef((props, forwardedRef) => {
 MenuContent.displayName = CONTENT_NAME;
 
 /* -------------------------------------------------------------------------------------------------
- * MenuSubMenuContent
+ * MenuNestedContent
  * -----------------------------------------------------------------------------------------------*/
 
-const SUB_MENU_CONTENT_NAME = 'MenuSubMenuContent';
+const SUB_MENU_CONTENT_NAME = 'MenuNestedContent';
 
-type MenuSubMenuContentOwnProps = Polymorphic.Merge<
+type MenuNestedContentOwnProps = Polymorphic.Merge<
   Omit<
     Polymorphic.OwnProps<typeof MenuContentImpl>,
     'portalled' | 'disableOutsidePointerEvents' | 'disableOutsideScroll'
@@ -489,15 +494,15 @@ type MenuSubMenuContentOwnProps = Polymorphic.Merge<
   }
 >;
 
-type MenuSubMenuContentPrimitive = Polymorphic.ForwardRefComponent<
+type MenuNestedContentPrimitive = Polymorphic.ForwardRefComponent<
   Polymorphic.IntrinsicElement<typeof MenuContentImpl>,
-  MenuSubMenuContentOwnProps
+  MenuNestedContentOwnProps
 >;
 
-const MenuSubMenuContent = React.forwardRef((props, forwardedRef) => {
+const MenuNestedContent = React.forwardRef((props, forwardedRef) => {
   const { forceMount, ...contentProps } = props;
   const context = useMenuContext(SUB_MENU_CONTENT_NAME);
-  const subMenuContext = useSubMenuContext(SUB_MENU_CONTENT_NAME);
+  const subMenuContext = useNestedMenuContext(SUB_MENU_CONTENT_NAME);
   const subMenuContentRef = React.useRef<HTMLDivElement>(null);
   const trigger = subMenuContext.triggerRef.current;
 
@@ -556,9 +561,9 @@ const MenuSubMenuContent = React.forwardRef((props, forwardedRef) => {
       </CollectionSlot>
     </Presence>
   );
-}) as MenuSubMenuContentPrimitive;
+}) as MenuNestedContentPrimitive;
 
-MenuSubMenuContent.displayName = SUB_MENU_CONTENT_NAME;
+MenuNestedContent.displayName = SUB_MENU_CONTENT_NAME;
 
 /* -------------------------------------------------------------------------------------------------
  * MenuItem
@@ -834,7 +839,7 @@ const TRIGGER_DEFAULT_TAG = 'button';
 
 type MenuTriggerOwnProps = Polymorphic.Merge<
   Polymorphic.OwnProps<typeof MenuTriggerImpl>,
-  Polymorphic.OwnProps<typeof MenuSubMenuTrigger>
+  Polymorphic.OwnProps<typeof MenuNestedTrigger>
 >;
 type MenuTriggerPrimitive = Polymorphic.ForwardRefComponent<
   Polymorphic.IntrinsicElement<typeof MenuTriggerImpl>,
@@ -845,7 +850,7 @@ const MenuTrigger = React.forwardRef((props, forwardedRef) => {
   const { isSubMenu } = useMenuLevel();
 
   if (isSubMenu) {
-    return <MenuSubMenuTrigger {...props} ref={forwardedRef} />;
+    return <MenuNestedTrigger {...props} ref={forwardedRef} />;
   } else {
     return <MenuTriggerImpl {...props} ref={forwardedRef} />;
   }
@@ -877,24 +882,24 @@ const MenuTriggerImpl = React.forwardRef((props, forwardedRef) => {
 MenuTrigger.displayName = TRIGGER_NAME;
 
 /* -------------------------------------------------------------------------------------------------
- * MenuSubMenuTrigger
+ * MenuNestedTrigger
  * -----------------------------------------------------------------------------------------------*/
 
-const SUB_MENU_TRIGGER_NAME = 'MenuSubMenuTrigger';
+const SUB_MENU_TRIGGER_NAME = 'MenuNestedTrigger';
 
-type MenuSubMenuTriggerOwnProps = Polymorphic.Merge<
+type MenuNestedTriggerOwnProps = Polymorphic.Merge<
   Polymorphic.OwnProps<typeof MenuTriggerImpl>,
   Omit<Polymorphic.OwnProps<typeof MenuItem>, 'onSelect'>
 >;
-type MenuSubMenuTriggerPrimitive = Polymorphic.ForwardRefComponent<
+type MenuNestedTriggerPrimitive = Polymorphic.ForwardRefComponent<
   Polymorphic.IntrinsicElement<typeof MenuTriggerImpl>,
-  MenuSubMenuTriggerOwnProps
+  MenuNestedTriggerOwnProps
 >;
 
-const MenuSubMenuTrigger = React.forwardRef((props, forwardedRef) => {
+const MenuNestedTrigger = React.forwardRef((props, forwardedRef) => {
   const { disabled, ...triggerProps } = props;
   const context = useMenuContext(SUB_MENU_TRIGGER_NAME);
-  const subMenuContext = useSubMenuContext(SUB_MENU_TRIGGER_NAME);
+  const subMenuContext = useNestedMenuContext(SUB_MENU_TRIGGER_NAME);
   const [mouseInteracting, setMouseInteracting] = React.useState(false);
 
   return (
@@ -940,9 +945,9 @@ const MenuSubMenuTrigger = React.forwardRef((props, forwardedRef) => {
       />
     </MenuItem>
   );
-}) as MenuSubMenuTriggerPrimitive;
+}) as MenuNestedTriggerPrimitive;
 
-MenuSubMenuTrigger.displayName = SUB_MENU_TRIGGER_NAME;
+MenuNestedTrigger.displayName = SUB_MENU_TRIGGER_NAME;
 
 /* ---------------------------------------------------------------------------------------------- */
 
