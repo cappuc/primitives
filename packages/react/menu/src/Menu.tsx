@@ -41,6 +41,8 @@ const MENU_NAME = 'Menu';
 type MenuContextValue = {
   open: boolean;
   onOpenChange(open: boolean): void;
+  contentId: string | null;
+  setContentId(): void;
 };
 
 const [MenuProvider, useMenuContext] = createContext<MenuContextValue>(MENU_NAME);
@@ -65,6 +67,8 @@ type MenuImplProps = {
 const MenuImpl: React.FC<MenuImplProps> = (props) => {
   const { open = false, children, onOpenChange } = props;
   const handleOpenChange = useCallbackRef(onOpenChange);
+  const [contentId, setContentId] = React.useState<string | null>(null);
+  const id = useId();
 
   React.useEffect(() => {
     const handleMenuClose = (event: Event) => {
@@ -78,7 +82,12 @@ const MenuImpl: React.FC<MenuImplProps> = (props) => {
 
   return (
     <PopperPrimitive.Root>
-      <MenuProvider open={open} onOpenChange={handleOpenChange}>
+      <MenuProvider
+        open={open}
+        onOpenChange={handleOpenChange}
+        contentId={contentId}
+        setContentId={React.useCallback(() => setContentId(id), [id])}
+      >
         {children}
       </MenuProvider>
     </PopperPrimitive.Root>
@@ -95,7 +104,6 @@ const NESTED_MENU_NAME = 'MenuNested';
 
 type MenuNestedContextValue = {
   triggerRef: React.RefObject<HTMLButtonElement>;
-  contentId: string;
   focusFirstItem: boolean;
   onMouseOpen(): void;
   onKeyboardOpen(): void;
@@ -134,7 +142,6 @@ const MenuNested: React.FC<MenuNestedOwnProps> = (props) => {
 
   return (
     <NestedMenuProvider
-      contentId={useId()}
       triggerRef={triggerRef}
       focusFirstItem={focusFirstItem}
       onMouseOpen={React.useCallback(() => {
@@ -413,6 +420,7 @@ const MenuContentImpl = React.forwardRef((props, forwardedRef) => {
                     onEntryFocus={onEntryFocus}
                   >
                     <PopperPrimitive.Content
+                      id={context.contentId ?? undefined}
                       role="menu"
                       {...focusScopeProps}
                       {...contentProps}
@@ -521,9 +529,9 @@ const MenuNestedContent = React.forwardRef((props, forwardedRef) => {
       <CollectionSlot>
         <MenuContentImpl
           data-state={getOpenState(context.open)}
+          {...contentProps}
           side="right"
           align="start"
-          {...contentProps}
           portalled
           disableOutsidePointerEvents={false}
           disableOutsideScroll={false}
@@ -847,7 +855,10 @@ type MenuTriggerPrimitive = Polymorphic.ForwardRefComponent<
 >;
 
 const MenuTrigger = React.forwardRef((props, forwardedRef) => {
+  const { setContentId } = useMenuContext(TRIGGER_NAME);
   const { isSubMenu } = useMenuLevel();
+
+  React.useEffect(setContentId, [setContentId]);
 
   if (isSubMenu) {
     return <MenuNestedTrigger {...props} ref={forwardedRef} />;
@@ -871,6 +882,7 @@ const MenuTriggerImpl = React.forwardRef((props, forwardedRef) => {
       type="button"
       aria-haspopup="menu"
       aria-expanded={context.open ? true : undefined}
+      aria-controls={context.open && context.contentId ? context.contentId : undefined}
       data-state={getOpenState(context.open)}
       {...triggerProps}
       as={as}
@@ -913,7 +925,6 @@ const MenuNestedTrigger = React.forwardRef((props, forwardedRef) => {
       }, [])}
     >
       <MenuTriggerImpl
-        aria-controls={context.open ? subMenuContext.contentId : undefined}
         {...triggerProps}
         ref={composeRefs(forwardedRef, subMenuContext.triggerRef)}
         onMouseMove={composeEventHandlers(triggerProps.onMouseMove, (event) => {
