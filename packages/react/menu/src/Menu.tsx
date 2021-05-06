@@ -187,9 +187,8 @@ type MenuContentPrimitive = Polymorphic.ForwardRefComponent<
 >;
 
 const MenuContent = React.forwardRef((props, forwardedRef) => {
-  const { isSubMenu } = useMenuLevel();
-
   const { forceMount, ...contentProps } = props;
+  const { isSubMenu } = useMenuLevel();
   const context = useMenuContext(CONTENT_NAME);
 
   if (isSubMenu) {
@@ -476,12 +475,22 @@ MenuContent.displayName = CONTENT_NAME;
 
 const SUB_MENU_CONTENT_NAME = 'MenuSubMenuContent';
 
-type MenuSubMenuContentOwnProps = Omit<
-  Polymorphic.OwnProps<typeof MenuContent>,
-  'portalled' | 'disableOutsidePointerEvents' | 'disableOutsideScroll'
+type MenuSubMenuContentOwnProps = Polymorphic.Merge<
+  Omit<
+    Polymorphic.OwnProps<typeof MenuContentImpl>,
+    'portalled' | 'disableOutsidePointerEvents' | 'disableOutsideScroll'
+  >,
+  {
+    /**
+     * Used to force mounting when more control is needed. Useful when
+     * controlling animation with React animation libraries.
+     */
+    forceMount?: true;
+  }
 >;
+
 type MenuSubMenuContentPrimitive = Polymorphic.ForwardRefComponent<
-  Polymorphic.IntrinsicElement<typeof MenuContent>,
+  Polymorphic.IntrinsicElement<typeof MenuContentImpl>,
   MenuSubMenuContentOwnProps
 >;
 
